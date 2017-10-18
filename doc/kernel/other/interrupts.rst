@@ -127,7 +127,7 @@ Implementation
 Defining a regular ISR
 ======================
 
-An ISR is defined at run-time by calling :c:macro:`IRQ_CONNECT`. It must
+An ISR is defined at runtime by calling :c:macro:`IRQ_CONNECT`. It must
 then be enabled by calling :cpp:func:`irq_enable()`.
 
 .. important::
@@ -277,7 +277,7 @@ which case the CONFIG_GEN_IRQ_VECTOR_TABLE option should be disabled.
 
 Some architectures may reserve some initial vectors for system exceptions
 and declare this in a table elsewhere, in which case
-CONFIG_GEN_IRQ_START_VECTOR needs to be set to properly offset the indicies
+CONFIG_GEN_IRQ_START_VECTOR needs to be set to properly offset the indices
 in the table.
 
 SW ISR Table

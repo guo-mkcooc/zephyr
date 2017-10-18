@@ -11,18 +11,12 @@ if SOC_IA32
 config SOC
 	default ia32
 
-config PHYS_LOAD_ADDR
-	default 0x00100000
-
-config PHYS_RAM_ADDR
-	default 0x00400000
-
 config RAM_SIZE
-	default 128 if XIP
-	default 256
+	default 4096 if XIP
+	default 8188 if !XIP
 
 config ROM_SIZE
-	default 72 if XIP
+	default 4092 if XIP
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 150000000 if LOAPIC_TIMER
@@ -41,12 +35,8 @@ config UART_NS16550_PORT_0
 
 if UART_NS16550_PORT_0
 
-config UART_NS16550_PORT_0_NAME
-	default "UART_0"
 config UART_NS16550_PORT_0_IRQ_PRI
 	default 3
-config UART_NS16550_PORT_0_BAUD_RATE
-	default 115200
 config UART_NS16550_PORT_0_OPTIONS
 	default 0
 
@@ -57,34 +47,13 @@ config UART_NS16550_PORT_1
 
 if UART_NS16550_PORT_1
 
-config UART_NS16550_PORT_1_NAME
-	default "UART_1"
 config UART_NS16550_PORT_1_IRQ_PRI
 	default 3
-config UART_NS16550_PORT_1_BAUD_RATE
-	default 115200
 config UART_NS16550_PORT_1_OPTIONS
 	default 0
 
 endif # UART_NS16550_PORT_1
 
 endif # UART_NS16550
-
-if BLUETOOTH_UART
-
-config BLUETOOTH_UART_ON_DEV_NAME
-	default "UART_1"
-
-endif
-
-if UART_PIPE
-
-config UART_PIPE_ON_DEV_NAME
-	default "UART_1"
-
-endif
-
-config BLUETOOTH_MONITOR_ON_DEV_NAME
-	default "UART_1" if BLUETOOTH_DEBUG_MONITOR
 
 endif

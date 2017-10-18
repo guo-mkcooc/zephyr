@@ -22,7 +22,7 @@
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
 
-static struct bt_gatt_ccc_cfg  blvl_ccc_cfg[CONFIG_BLUETOOTH_MAX_PAIRED] = {};
+static struct bt_gatt_ccc_cfg  blvl_ccc_cfg[BT_GATT_CCC_MAX] = {};
 static u8_t simulate_blvl;
 static u8_t battery = 100;
 
@@ -51,9 +51,11 @@ static struct bt_gatt_attr attrs[] = {
 	BT_GATT_CCC(blvl_ccc_cfg, blvl_ccc_cfg_changed),
 };
 
+static struct bt_gatt_service bas_svc = BT_GATT_SERVICE(attrs);
+
 void bas_init(void)
 {
-	bt_gatt_register(attrs, ARRAY_SIZE(attrs));
+	bt_gatt_service_register(&bas_svc);
 }
 
 void bas_notify(void)

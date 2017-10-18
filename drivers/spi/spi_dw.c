@@ -44,7 +44,7 @@
 #include "spi_dw.h"
 #include "spi_context.h"
 
-static void completed(struct device *dev, uint8_t error)
+static void completed(struct device *dev, u8_t error)
 {
 	const struct spi_dw_config *info = dev->config->config_info;
 	struct spi_dw_data *spi = dev->driver_data;
@@ -62,8 +62,6 @@ out:
 	/* need to give time for FIFOs to drain before issuing more commands */
 	while (test_bit_sr_busy(info->regs)) {
 	}
-
-	spi->error = error;
 
 	/* Disabling interrupts */
 	write_imr(DW_SPI_IMR_MASK, info->regs);
@@ -129,7 +127,7 @@ static void push_data(struct device *dev)
 
 		write_dr(data, info->regs);
 
-		spi_context_update_tx(&spi->ctx, spi->dfs);
+		spi_context_update_tx(&spi->ctx, spi->dfs, 1);
 		spi->fifo_diff++;
 
 		f_tx--;
@@ -173,7 +171,7 @@ static void pull_data(struct device *dev)
 			}
 		}
 
-		spi_context_update_rx(&spi->ctx, spi->dfs);
+		spi_context_update_rx(&spi->ctx, spi->dfs, 1);
 		spi->fifo_diff--;
 	}
 
@@ -308,11 +306,7 @@ static int transceive(struct spi_config *config,
 	/* Enable the controller */
 	set_bit_ssienr(info->regs);
 
-	spi_context_wait_for_completion(&spi->ctx);
-
-	if (spi->error) {
-		ret = -EIO;
-	}
+	ret = spi_context_wait_for_completion(&spi->ctx);
 out:
 	spi_context_release(&spi->ctx, ret);
 
@@ -418,7 +412,7 @@ int spi_dw_init(struct device *dev)
 
 	SYS_LOG_DBG("Designware SPI driver initialized on device: %p", dev);
 
-	spi_context_release(&spi->ctx, 0);
+	spi_context_unlock_unconditionally(&spi->ctx);
 
 	return 0;
 }

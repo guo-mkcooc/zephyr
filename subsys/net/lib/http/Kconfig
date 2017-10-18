@@ -48,19 +48,37 @@ config HTTP_CLIENT
 	help
 	Enables HTTP client routines
 
+config HTTP_CLIENT_NETWORK_TIMEOUT
+	int "Default network activity timeout in seconds"
+	default 20
+	depends on HTTP_CLIENT
+	help
+	Default network activity timeout in seconds.  This setting is used
+	for TCP connection timeout.
+
 config HTTP_PARSER
 	bool "HTTP Parser support"
 	default n
 	select HTTP
+	select HTTP_PARSER_URL
 	help
 	This option enables the http_parser library from nodejs.
+	This parser requires some string-related routines commonly
+	provided by a libc implementation.
+
+config HTTP_PARSER_URL
+	bool "HTTP Parser for URL support"
+	default n
+	select HTTP
+	help
+	This option enables the URI parser library based on source from nodejs.
 	This parser requires some string-related routines commonly
 	provided by a libc implementation.
 
 config HTTP_PARSER_STRICT
 	bool "HTTP strict parsing"
 	default n
-	depends on HTTP_PARSER
+	depends on (HTTP_PARSER || HTTP_PARSER_URL)
 	help
 	This option enables the strict parsing option
 
@@ -79,17 +97,6 @@ config HTTPS_STACK_SIZE
 	help
 	HTTPS thread stack size. The mbedtls routines will use this stack
 	thus it is by default very large.
-
-config HTTPS_HEAP_SIZE
-	int "HTTPS heap size for mbedtls"
-	default 12000
-	depends on HTTPS
-	depends on MBEDTLS
-	help
-	HTTPS heap size. The mbedtls routines will use this heap if enabled.
-	See ext/lib/crypto/mbedtls/include/mbedtls/config.h and
-	MBEDTLS_MEMORY_BUFFER_ALLOC_C option for details. This option is not
-	enabled by default.
 
 config  NET_DEBUG_HTTP
 	bool "Debug HTTP"

@@ -143,7 +143,7 @@
 	#define obj_init_type "static"
 #else
 	#define obj_init_type "dynamic"
-	fork_obj_t fork_objs[NUM_PHIL];
+	fork_obj_t __kernel fork_objs[NUM_PHIL];
 #endif
 
 static fork_t forks[NUM_PHIL] = {
@@ -156,7 +156,7 @@ static fork_t forks[NUM_PHIL] = {
 #endif
 };
 
-static char __stack __noinit stacks[NUM_PHIL][STACK_SIZE];
-static struct k_thread threads[NUM_PHIL];
+static K_THREAD_STACK_ARRAY_DEFINE(stacks, NUM_PHIL, STACK_SIZE);
+static struct k_thread __kernel threads[NUM_PHIL];
 
 #endif /* phil_obj_abstract__h */

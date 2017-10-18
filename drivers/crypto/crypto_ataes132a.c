@@ -167,7 +167,7 @@ int ataes132a_init(struct device *dev)
 {
 	struct ataes132a_device_data *ataes132a = dev->driver_data;
 	const struct ataes132a_device_config *cfg = dev->config->config_info;
-	union dev_config i2c_cfg;
+	u32_t i2c_cfg;
 
 	SYS_LOG_DBG("ATAES132A INIT");
 
@@ -177,14 +177,11 @@ int ataes132a_init(struct device *dev)
 		return -EINVAL;
 	}
 
-	i2c_cfg.raw = 0;
-	i2c_cfg.bits.is_master_device = 1;
-	i2c_cfg.bits.speed = ATAES132A_BUS_SPEED;
+	i2c_cfg = I2C_MODE_MASTER | I2C_SPEED_SET(ATAES132A_BUS_SPEED);
 
-	i2c_configure(ataes132a->i2c, i2c_cfg.raw);
+	i2c_configure(ataes132a->i2c, i2c_cfg);
 
-	k_sem_init(&ataes132a->device_sem, 0, UINT_MAX);
-	k_sem_give(&ataes132a->device_sem);
+	k_sem_init(&ataes132a->device_sem, 1, UINT_MAX);
 
 	ataes132a_init_states();
 
@@ -884,8 +881,8 @@ int ataes132a_query_caps(struct device *dev)
 }
 
 const struct ataes132a_device_config ataes132a_config = {
-	.i2c_port = CONFIG_ATAES132A_I2C_PORT_NAME,
-	.i2c_addr = CONFIG_ATAES132A_I2C_ADDR,
+	.i2c_port = CONFIG_CRYPTO_ATAES132A_I2C_PORT_NAME,
+	.i2c_addr = CONFIG_CRYPTO_ATAES132A_I2C_ADDR,
 	.i2c_speed = ATAES132A_BUS_SPEED,
 };
 

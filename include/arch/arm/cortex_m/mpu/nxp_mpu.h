@@ -58,10 +58,36 @@
 			  (SM_SAME_AS_UM << BM2_SM_SHIFT) | \
 			  (SM_SAME_AS_UM << BM3_SM_SHIFT))
 
+#define MPU_REGION_SU_RX ((SM_RX_ALLOW << BM0_SM_SHIFT) | \
+			  (SM_RX_ALLOW << BM1_SM_SHIFT) | \
+			  (SM_RX_ALLOW << BM2_SM_SHIFT) | \
+			  (SM_RX_ALLOW << BM3_SM_SHIFT))
+
+#define MPU_REGION_SU_RW ((SM_RW_ALLOW << BM0_SM_SHIFT) | \
+			  (SM_RW_ALLOW << BM1_SM_SHIFT) | \
+			  (SM_RW_ALLOW << BM2_SM_SHIFT) | \
+			  (SM_RW_ALLOW << BM3_SM_SHIFT))
+
+#define MPU_REGION_SU_RWX ((SM_RWX_ALLOW << BM0_SM_SHIFT) | \
+			   (SM_RWX_ALLOW << BM1_SM_SHIFT) | \
+			   (SM_RWX_ALLOW << BM2_SM_SHIFT) | \
+			   (SM_RWX_ALLOW << BM3_SM_SHIFT))
+
 /* The ENDADDR field has the last 5 bit reserved and set to 1 */
 #define ENDADDR_ROUND(x) (x - 0x1F)
 
 /* Some helper defines for common regions */
+#if defined(CONFIG_MPU_ALLOW_FLASH_WRITE)
+#define REGION_RAM_ATTR	  (MPU_REGION_READ | \
+			   MPU_REGION_WRITE | \
+			   MPU_REGION_EXEC | \
+			   MPU_REGION_SU)
+
+#define REGION_FLASH_ATTR (MPU_REGION_READ | \
+			   MPU_REGION_WRITE | \
+			   MPU_REGION_EXEC | \
+			   MPU_REGION_SU)
+#else
 #define REGION_RAM_ATTR	  (MPU_REGION_READ | \
 			   MPU_REGION_WRITE | \
 			   MPU_REGION_SU)
@@ -69,6 +95,7 @@
 #define REGION_FLASH_ATTR (MPU_REGION_READ | \
 			   MPU_REGION_EXEC | \
 			   MPU_REGION_SU)
+#endif
 
 #define REGION_IO_ATTR	  (MPU_REGION_READ | \
 			   MPU_REGION_WRITE | \
@@ -77,6 +104,8 @@
 
 #define REGION_RO_ATTR	  (MPU_REGION_READ | \
 			   MPU_REGION_SU)
+
+#define REGION_DEBUG_ATTR  MPU_REGION_SU
 
 /* Region definition data structure */
 struct nxp_mpu_region {

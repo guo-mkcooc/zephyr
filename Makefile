@@ -1,5 +1,5 @@
 VERSION_MAJOR 	   = 1
-VERSION_MINOR 	   = 8
+VERSION_MINOR 	   = 9
 PATCHLEVEL 	   = 99
 VERSION_RESERVED   = 0
 EXTRAVERSION       =
@@ -320,10 +320,8 @@ GDB		= $(CROSS_COMPILE)gdb
 READELF		= $(CROSS_COMPILE)readelf
 AWK		= awk
 ifeq ($(PREBUILT_HOST_TOOLS),)
-GENOFFSET_H	= scripts/gen_offset_header/gen_offset_header
 FIXDEP		= scripts/basic/fixdep
 else
-GENOFFSET_H	= $(PREBUILT_HOST_TOOLS)/gen_offset_header
 ifneq ($(filter host-tools, $(MAKECMDGOALS)),)
 FIXDEP		= scripts/basic/fixdep
 else
@@ -416,7 +414,7 @@ exports += VERSION_MAJOR VERSION_MINOR PATCHLEVEL VERSION_RESERVED EXTRAVERSION
 exports += KERNELRELEASE KERNELVERSION
 exports += ARCH CONFIG_SHELL HOSTCC HOSTCFLAGS CROSS_COMPILE AS LD CC CXX
 exports += CPP AR NM STRIP OBJCOPY OBJDUMP GDB
-exports += MAKE AWK INSTALLKERNEL PERL PYTHON GENOFFSET_H
+exports += MAKE AWK PERL PYTHON
 exports += HOSTCXX HOSTCXXFLAGS CHECK CHECKFLAGS
 
 exports += KBUILD_CPPFLAGS NOSTDINC_FLAGS ZEPHYRINCLUDE OBJCOPYFLAGS LDFLAGS
@@ -437,7 +435,9 @@ define filechk_Makefile.export
 	echo "BOARD=$(BOARD)"; \
 	echo; \
 	$(foreach e,$(exports),echo $(e)=$($(e));) echo; \
-	echo "include $(O)/include/config/auto.conf";)
+	echo "include $(O)/include/config/auto.conf"; \
+	echo "include $(O)/include/generated/generated_dts_board.conf"; \
+	echo "-include $(srctree)/boards/$(ARCH)/$(BOARD_NAME)/Makefile.board";)
 endef
 
 # Files to ignore in find ... statements
@@ -456,7 +456,6 @@ PHONY += scripts_basic
 ifeq ($(PREBUILT_HOST_TOOLS),)
 scripts_basic:
 	$(Q)$(MAKE) $(build)=scripts/basic
-	$(Q)$(MAKE) $(build)=scripts/gen_offset_header
 else
 scripts_basic:
 endif
@@ -606,9 +605,8 @@ include/config/auto.conf: ;
 endif # $(dot-config)
 
 # kernel objects are built as a static library
-libs-y := kernel/
-core-y := lib/ misc/ boards/ ext/ subsys/ tests/ arch/
-drivers-y := drivers/
+libs-y := lib/ tests/
+core-y := kernel/ drivers/ misc/ boards/ ext/ subsys/ arch/
 
 ARCH = $(subst $(DQUOTE),,$(CONFIG_ARCH))
 export ARCH
@@ -661,6 +659,8 @@ endif
 
 # Some GCC variants don't support these
 KBUILD_CFLAGS += $(call cc-option,-fno-asynchronous-unwind-tables,)
+KBUILD_CFLAGS += $(call cc-option,-fno-pie,)
+KBUILD_CFLAGS += $(call cc-option,-fno-pic,)
 
 ifeq ($(CONFIG_STACK_CANARIES),y)
 KBUILD_CFLAGS += $(call cc-option,-fstack-protector-all,)
@@ -755,6 +755,7 @@ KBUILD_CFLAGS += $(KCFLAGS)
 
 LINKFLAGPREFIX ?= -Wl,
 LDFLAGS_zephyr += $(LDFLAGS)
+LDFLAGS_zephyr += $(call cc-ldoption,-no-pie)
 LDFLAGS_zephyr += $(call cc-ldoption,$(LINKFLAGPREFIX)-X)
 LDFLAGS_zephyr += $(call cc-ldoption,$(LINKFLAGPREFIX)-N)
 LDFLAGS_zephyr += $(call cc-ldoption,$(LINKFLAGPREFIX)--gc-sections)
@@ -785,8 +786,6 @@ ifdef MAKEFILE_TOOLCHAIN_DO_PASS2
 include $(srctree)/scripts/Makefile.toolchain.$(ZEPHYR_GCC_VARIANT)
 endif
 
-QEMU		= $(addsuffix /,$(QEMU_BIN_PATH))$(QEMU_$(ARCH))
-
 # The all: target is the default when no target is given on the
 # command line.
 # This allow a user to issue only 'make' to build a kernel including modules
@@ -800,8 +799,7 @@ all: $(KERNEL_BIN_NAME) $(KERNEL_STAT_NAME)
 # this default value
 export KBUILD_IMAGE ?= zephyr
 
-zephyr-dirs	:= $(patsubst %/,%,$(filter %/, $(core-y) $(drivers-y) \
-		     $(libs-y)))
+zephyr-dirs	:= $(patsubst %/,%,$(filter %/,$(libs-y) $(core-y)))
 
 # Workaround for some make notdir implementations that require
 # the paramenter not to end in "/".
@@ -812,20 +810,16 @@ zephyr-app-dir-root := $(abspath $(patsubst %, %/.., $(SOURCE_DIR)))
 zephyr-alldirs	:= $(sort $(zephyr-dirs) $(SOURCE_DIR) $(patsubst %/,%,$(filter %/, \
 		     $(core-) $(drivers-) $(libs-) $(app-))))
 
-core-y		:= $(patsubst %/, %/built-in.o, $(core-y))
+core-y		:= $(patsubst %/, %/built-in.o, $(core-y)) kernel/lib.a
 app-y		:= $(patsubst %, %/built-in.o, $(notdir $(zephyr-app-dir-root-name)))
-drivers-y	:= $(patsubst %/, %/built-in.o, $(drivers-y))
-libs-y1		:= $(patsubst %/, %/lib.a, $(libs-y))
-libs-y2		:= $(patsubst %/, %/built-in.o, $(libs-y))
-libs-y		:= $(libs-y1) $(libs-y2)
+libs-y		:= $(patsubst %/, %/built-in.o, $(libs-y))
 
 # core-y must be last here. several arches use .gnu.linkonce magic
 # to register interrupt or exception handlers, and defaults under
 # arch/ (part of core-y) must be linked after drivers or libs.
-export KBUILD_ZEPHYR_MAIN := $(drivers-y) $(libs-y) $(core-y)
 export LDFLAGS_zephyr
 
-zephyr-deps := $(KBUILD_LDS) $(KBUILD_ZEPHYR_MAIN) $(app-y)
+zephyr-deps := $(KBUILD_LDS) $(core-y) $(libs-y) $(app-y)
 
 ALL_LIBS += $(TOOLCHAIN_LIBS)
 export ALL_LIBS
@@ -833,11 +827,18 @@ export ALL_LIBS
 LINK_LIBS := $(foreach l,$(ALL_LIBS), -l$(l))
 
 quiet_cmd_ar_target = AR      $@
-# Do not put lib.a into libzephyr.a. lib.a files are to be linked separately to
-# the final image
-cmd_ar_target = rm -f $@; $(AR) rcT$(KBUILD_ARFLAGS) $@ \
-	$(filter-out %/lib.a, $(KBUILD_ZEPHYR_MAIN))
-libzephyr.a: $(zephyr-deps)
+      cmd_ar_target = rm -f $@; $(AR) rcT$(KBUILD_ARFLAGS) $@ $^
+
+# Contains all the kernel-space objects except the kernel/lib.a which is
+# linked outside of the --whole-archive directive with different AR
+# parameters to save footprint space for unused kernel subsystems
+libzephyr.a: $(filter-out %/lib.a, $(core-y))
+	$(call cmd,ar_target)
+
+# All application objects and third party libraries which would be considered
+# to not directly be part of the kernel (and hence whose symbols would not
+# be globally marked as supervisor-only in memory protection scenarios)
+libapplication.a: $(app-y) $(libs-y) $(KBUILD_ZEPHYR_APP)
 	$(call cmd,ar_target)
 
 quiet_cmd_create-lnk = LINK    $@
@@ -850,11 +851,10 @@ quiet_cmd_create-lnk = LINK    $@
 	echo "-e __start"; 						 	\
 	echo "$(LINKFLAGPREFIX)--start-group";					\
 	echo "$(LINKFLAGPREFIX)--whole-archive";				\
-	echo "$(KBUILD_ZEPHYR_APP)";						\
-	echo "$(app-y)";							\
+	echo "libapplication.a";						\
 	echo "libzephyr.a";							\
 	echo "$(LINKFLAGPREFIX)--no-whole-archive";         			\
-	echo "$(filter %/lib.a, $(KBUILD_ZEPHYR_MAIN))";			\
+	echo "$(filter %/lib.a, $(core-y))";					\
 	echo "$(objtree)/arch/$(ARCH)/core/offsets/offsets.o"; 			\
 	echo "$(LINKFLAGPREFIX)--end-group"; 					\
 	echo "$(LIB_INCLUDE_DIR) $(LINK_LIBS)";					\
@@ -871,7 +871,7 @@ linker.cmd: $(zephyr-deps)
 		$(EXTRA_LINKER_CMD_OPT) $(KBUILD_LDS) -o $@
 
 
-$(PREBUILT_KERNEL): $(zephyr-deps) libzephyr.a $(KBUILD_ZEPHYR_APP) $(app-y) \
+$(PREBUILT_KERNEL): $(zephyr-deps) libzephyr.a libapplication.a \
 		linker.cmd $(KERNEL_NAME).lnk
 	$(Q)$(CC) -T linker.cmd @$(KERNEL_NAME).lnk -o $@
 
@@ -891,12 +891,24 @@ DEPRECATION_WARNING_STR := \
 WARN_ABOUT_DEPRECATION := $(if $(CONFIG_BOARD_DEPRECATED),echo -e \
 				-n $(DEPRECATION_WARNING_STR),true)
 
+GENERATED_KERNEL_OBJECT_FILES :=
+
 ifeq ($(ARCH),x86)
 include $(srctree)/arch/x86/Makefile.idt
+ifeq ($(CONFIG_X86_MMU),y)
+include $(srctree)/arch/x86/Makefile.mmu
+endif
+ifeq ($(CONFIG_GDT_DYNAMIC),y)
+include $(srctree)/arch/x86/Makefile.gdt
+endif
 endif
 
 ifeq ($(CONFIG_GEN_ISR_TABLES),y)
 include $(srctree)/arch/common/Makefile.gen_isr_tables
+endif
+
+ifeq ($(CONFIG_USERSPACE),y)
+include $(srctree)/arch/common/Makefile.kobjects
 endif
 
 ifneq ($(GENERATED_KERNEL_OBJECT_FILES),)
@@ -954,9 +966,9 @@ $(KERNEL_STAT_NAME): $(KERNEL_BIN_NAME) $(KERNEL_ELF_NAME)
 	@$(READELF) -e $(KERNEL_ELF_NAME) > $@
 
 ram_report: $(KERNEL_STAT_NAME)
-	@$(srctree)/scripts/size_report -r -o $(O)
+	@$(srctree)/scripts/footprint/size_report -r -o $(O)
 rom_report: $(KERNEL_STAT_NAME)
-	@$(srctree)/scripts/size_report -F -o $(O)
+	@$(srctree)/scripts/footprint/size_report -F -o $(O)
 
 zephyr: $(zephyr-deps) $(KERNEL_BIN_NAME)
 
@@ -964,12 +976,12 @@ ifeq ($(CONFIG_HAS_DTS),y)
 define filechk_generated_dts_board.h
 	(echo "/* WARNING. THIS FILE IS AUTO-GENERATED. DO NOT MODIFY! */"; \
 		if test -e $(ZEPHYR_BASE)/dts/$(ARCH)/$(BOARD_NAME).fixup; then \
-			$(ZEPHYR_BASE)/scripts/extract_dts_includes.py \
+			$(ZEPHYR_BASE)/scripts/dts/extract_dts_includes.py \
 				-d dts/$(ARCH)/$(BOARD_NAME).dts_compiled \
 				-y $(ZEPHYR_BASE)/dts/$(ARCH)/yaml \
 				-f $(ZEPHYR_BASE)/dts/$(ARCH)/$(BOARD_NAME).fixup; \
 		else \
-			$(ZEPHYR_BASE)/scripts/extract_dts_includes.py \
+			$(ZEPHYR_BASE)/scripts/dts/extract_dts_includes.py \
 				-d dts/$(ARCH)/$(BOARD_NAME).dts_compiled \
 				-y $(ZEPHYR_BASE)/dts/$(ARCH)/yaml; \
 		fi; \
@@ -977,7 +989,7 @@ define filechk_generated_dts_board.h
 endef
 define filechk_generated_dts_board.conf
 	(echo "# WARNING. THIS FILE IS AUTO-GENERATED. DO NOT MODIFY!"; \
-		$(ZEPHYR_BASE)/scripts/extract_dts_includes.py \
+		$(ZEPHYR_BASE)/scripts/dts/extract_dts_includes.py \
 		-d dts/$(ARCH)/$(BOARD_NAME).dts_compiled \
 		-y $(ZEPHYR_BASE)/dts/$(ARCH)/yaml -k; \
 		)
@@ -1004,6 +1016,46 @@ endif
 	$(call filechk,generated_dts_board.conf)
 
 dts: include/generated/generated_dts_board.h
+
+GEN_SYSCALL_HEADER := $(srctree)/scripts/gen_syscall_header.py
+
+include/generated/syscall_macros.h: $(GEN_SYSCALL_HEADER)
+	$(Q)mkdir -p $(dir $@)
+	$(Q)$(GEN_SYSCALL_HEADER) > $@
+
+GEN_SYSCALLS := $(srctree)/scripts/gen_syscalls.py
+
+define filechk_syscall_list.h
+	$(GEN_SYSCALLS) \
+		--include $(ZEPHYR_BASE)/include \
+		--base-output include/generated/syscalls \
+		--syscall-dispatch include/generated/dispatch.c.tmp
+endef
+
+include/generated/syscall_list.h: include/config/auto.conf FORCE
+	$(call filechk,syscall_list.h)
+
+define filechk_syscall_dispatch.c
+	cat include/generated/dispatch.c.tmp
+endef
+
+include/generated/syscall_dispatch.c: include/generated/syscall_list.h FORCE
+	$(call filechk,syscall_dispatch.c)
+
+syscall_generated: include/generated/syscall_macros.h \
+		   include/generated/syscall_dispatch.c \
+		   include/generated/syscall_list.h
+
+define filechk_.config-sanitycheck
+	(cat .config; \
+	 grep -e '^CONFIG' include/generated/generated_dts_board.conf | cat; \
+	)
+endef
+
+.config-sanitycheck: include/generated/generated_dts_board.conf FORCE
+	$(call filechk,.config-sanitycheck)
+
+config-sanitycheck: .config-sanitycheck
 
 # The actual objects are generated when descending,
 # make sure no implicit rule kicks in
@@ -1062,7 +1114,7 @@ archprepare = $(strip \
 		)
 
 # All the preparing..
-prepare: $(archprepare) dts FORCE
+prepare: $(archprepare) dts syscall_generated FORCE
 	$(Q)$(MAKE) $(build)=.
 
 # Generate some files
@@ -1121,6 +1173,7 @@ CLEAN_DIRS  += $(MODVERDIR)
 
 CLEAN_FILES += 	include/generated/generated_dts_board.conf \
 		include/generated/generated_dts_board.h \
+		.config-sanitycheck \
 		.old_version .tmp_System.map .tmp_version \
 		.tmp_* System.map *.lnk *.map *.elf *.lst \
 		*.bin *.hex *.stat *.strip staticIdt.o linker.cmd \
@@ -1199,8 +1252,6 @@ help:
 	@echo  '  all		  - Build all targets marked with [*]'
 	@echo  '* zephyr	  - Build a zephyr application'
 	@echo  '  run		  - Build a zephyr application and run it if board supports emulation'
-	@echo  '  qemu		  - Build a zephyr application and run it in qemu [deprecated]'
-	@echo  '  qemugdb         - Same as 'qemu' but start a GDB server on port 1234 [deprecated]'
 	@echo  '  flash		  - Build and flash an application'
 	@echo  '  debug		  - Build and debug an application using GDB'
 	@echo  '  debugserver	  - Build and start a GDB server (port 1234 for Qemu targets)'
@@ -1259,11 +1310,8 @@ $(help-board-dirs): help-%:
 host-tools:
 	$(Q)$(MAKE) $(build)=scripts/basic
 	$(Q)$(MAKE) $(build)=scripts/kconfig standalone
-	$(Q)$(MAKE) $(build)=scripts/gen_idt
-	$(Q)$(MAKE) $(build)=scripts/gen_offset_header
 	@mkdir -p ${ZEPHYR_BASE}/bin
-	@cp scripts/basic/fixdep scripts/gen_idt/gen_idt scripts/kconfig/conf \
-		scripts/gen_offset_header/gen_offset_header ${ZEPHYR_BASE}/bin
+	@cp scripts/basic/fixdep scripts/kconfig/conf ${ZEPHYR_BASE}/bin
 
 
 # Documentation targets
@@ -1326,9 +1374,15 @@ run:
 endif
 
 ifneq ($(FLASH_SCRIPT),)
+ifeq ($(USE_ZEPHYR_FLASH_DEBUG_SHELL),)
+flash: zephyr
+	@echo "Flashing $(BOARD_NAME)"
+	$(Q)$(srctree)/scripts/support/zephyr_flash_debug.py flash $(srctree)/scripts/support/$(FLASH_SCRIPT)
+else
 flash: zephyr
 	@echo "Flashing $(BOARD_NAME)"
 	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/support/$(FLASH_SCRIPT) flash
+endif
 else
 flash: FORCE
 	@echo Flashing not supported with this board.

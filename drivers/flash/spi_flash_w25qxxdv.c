@@ -344,6 +344,7 @@ static const struct flash_driver_api spi_flash_api = {
 	.write = spi_flash_wb_write,
 	.erase = spi_flash_wb_erase,
 	.write_protection = spi_flash_wb_write_protection_set,
+	.write_block_size = 1,
 };
 
 static int spi_flash_init(struct device *dev)
@@ -359,8 +360,7 @@ static int spi_flash_init(struct device *dev)
 
 	data->spi = spi_dev;
 
-	k_sem_init(&data->sem, 0, UINT_MAX);
-	k_sem_give(&data->sem);
+	k_sem_init(&data->sem, 1, UINT_MAX);
 
 	ret = spi_flash_wb_config(dev);
 	if (!ret) {

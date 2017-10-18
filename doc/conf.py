@@ -136,9 +136,9 @@ rst_epilog = """
 .. |deg|    unicode:: U+000B0 .. DEGREE SIGN
    :ltrim:
 .. |plusminus|  unicode:: U+000B1 .. PLUS-MINUS SIGN
-   :trim:
+   :rtrim:
 .. |micro|  unicode:: U+000B5 .. MICRO SIGN
-   :trim:
+   :rtrim:
 """
 
 # -- Options for HTML output ----------------------------------------------
@@ -242,6 +242,8 @@ html_show_license = True
 #   'nl', 'no', 'pt', 'ro', 'ru', 'sv', 'tr'
 #html_search_language = 'en'
 
+sourcelink_suffix = '.txt'
+
 # A dictionary with options for the search language support, empty by default.
 # Now only 'ja' uses this config value
 #html_search_options = {'type': 'default'}
@@ -340,13 +342,23 @@ breathe_projects = {
 }
 breathe_default_project = "Zephyr"
 
+# Qualifiers to a function are causing Sphihx/Breathe to warn about
+# Error when parsing function declaration and more.  This is a list
+# of strings that the parser additionally should accept as
+# attributes.
+cpp_id_attributes = ['__syscall', '__syscall_inline', '__deprecated',
+    '__may_alias', '__used', '__unused', '__weak',
+    '__DEPRECATED_MACRO', 'FUNC_NORETURN' ]
+
 # docs_title is used in the breadcrumb title in the zephyr docs theme
 html_context = {
     'show_license': html_show_license,
     'docs_title': docs_title,
 }
 
-extlinks = {'jira': ('https://jira.zephyrproject.org/browse/%s', '')}
+extlinks = {'jira': ('https://jira.zephyrproject.org/browse/%s', ''),
+            'github': ('https://github.com/zephyrproject-rtos/zephyr/issues/%s', '')
+           }
 
 # some configuration for linkcheck builder
 #   noticed that we're getting false-positive link errors on JIRA, I suspect

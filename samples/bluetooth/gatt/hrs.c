@@ -22,7 +22,7 @@
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
 
-static struct bt_gatt_ccc_cfg hrmc_ccc_cfg[CONFIG_BLUETOOTH_MAX_PAIRED] = {};
+static struct bt_gatt_ccc_cfg hrmc_ccc_cfg[BT_GATT_CCC_MAX] = {};
 static u8_t simulate_hrm;
 static u8_t heartrate = 90;
 static u8_t hrs_blsc;
@@ -56,11 +56,13 @@ static struct bt_gatt_attr attrs[] = {
 			   NULL, NULL),
 };
 
+static struct bt_gatt_service hrs_svc = BT_GATT_SERVICE(attrs);
+
 void hrs_init(u8_t blsc)
 {
 	hrs_blsc = blsc;
 
-	bt_gatt_register(attrs, ARRAY_SIZE(attrs));
+	bt_gatt_service_register(&hrs_svc);
 }
 
 void hrs_notify(void)

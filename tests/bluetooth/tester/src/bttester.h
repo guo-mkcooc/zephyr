@@ -527,6 +527,13 @@ struct gatt_notification_ev {
 	u8_t data[0];
 } __packed;
 
+#define GATT_EV_ATTR_VALUE_CHANGED	0x81
+struct gatt_attr_value_changed_ev {
+	u16_t handle;
+	u16_t data_length;
+	u8_t data[0];
+} __packed;
+
 static inline void tester_set_bit(u8_t *addr, unsigned int bit)
 {
 	u8_t *p = addr + (bit / 8);
@@ -631,8 +638,8 @@ u8_t tester_init_gatt(void);
 void tester_handle_gatt(u8_t opcode, u8_t index, u8_t *data,
 			u16_t len);
 
-#if defined(CONFIG_BLUETOOTH_L2CAP_DYNAMIC_CHANNEL)
+#if defined(CONFIG_BT_L2CAP_DYNAMIC_CHANNEL)
 u8_t tester_init_l2cap(void);
 void tester_handle_l2cap(u8_t opcode, u8_t index, u8_t *data,
 			 u16_t len);
-#endif /* CONFIG_BLUETOOTH_L2CAP_DYNAMIC_CHANNEL */
+#endif /* CONFIG_BT_L2CAP_DYNAMIC_CHANNEL */

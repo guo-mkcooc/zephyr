@@ -12,6 +12,7 @@
  */
 
 #include <autoconf.h>
+#include <generated_dts_board.h>
 
 /* physical address where the kernel is loaded */
 #define PHYS_LOAD_ADDR CONFIG_PHYS_LOAD_ADDR
@@ -38,7 +39,8 @@ MEMORY
      * target. However, it shouldn't overlap any other regions.
      */
 
-    IDT_LIST        : ORIGIN = 2K, LENGTH = 2K
+    IDT_LIST        : ORIGIN = 0xFFFF1000, LENGTH = 2K
+    MMU_LIST	    : ORIGIN = 0xFFFF2000, LENGTH = 1K
     }
 
 #include <arch/x86/linker.ld>

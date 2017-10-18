@@ -22,7 +22,7 @@
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
 
-static struct bt_gatt_ccc_cfg ct_ccc_cfg[CONFIG_BLUETOOTH_MAX_PAIRED] = {};
+static struct bt_gatt_ccc_cfg ct_ccc_cfg[BT_GATT_CCC_MAX] = {};
 static u8_t ct[10];
 static u8_t ct_update;
 
@@ -67,6 +67,8 @@ static struct bt_gatt_attr attrs[] = {
 	BT_GATT_CCC(ct_ccc_cfg, ct_ccc_cfg_changed),
 };
 
+static struct bt_gatt_service cts_svc = BT_GATT_SERVICE(attrs);
+
 static void generate_current_time(u8_t *buf)
 {
 	u16_t year;
@@ -99,7 +101,7 @@ void cts_init(void)
 	/* Simulate current time for Current Time Service */
 	generate_current_time(ct);
 
-	bt_gatt_register(attrs, ARRAY_SIZE(attrs));
+	bt_gatt_service_register(&cts_svc);
 }
 
 void cts_notify(void)

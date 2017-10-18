@@ -27,7 +27,7 @@ config NET_BUF_LOG
 config SYS_LOG_NET_BUF_LEVEL
 	int
 	prompt "Network buffer Logging level"
-	depends on NET_BUF_LOG
+	depends on NET_BUF_LOG && SYS_LOG
 	default 1
 	range 0 4
 	help
@@ -80,6 +80,8 @@ config  NETWORKING
 	This option enabled generic link layer and IP networking support.
 
 if NETWORKING
+
+source "subsys/net/Kconfig.hostname"
 
 source "subsys/net/ip/Kconfig"
 

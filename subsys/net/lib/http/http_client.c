@@ -45,8 +45,12 @@
 /* HTTP client defines */
 #define HTTP_EOF           "\r\n\r\n"
 
+#define HTTP_HOST          "Host: "
 #define HTTP_CONTENT_TYPE  "Content-Type: "
 #define HTTP_CONT_LEN_SIZE 64
+
+/* Default network activity timeout in seconds */
+#define HTTP_NETWORK_TIMEOUT	K_SECONDS(CONFIG_HTTP_CLIENT_NETWORK_TIMEOUT)
 
 struct waiter {
 	struct http_client_ctx *ctx;
@@ -61,39 +65,47 @@ int http_request(struct http_client_ctx *ctx,
 	struct net_pkt *pkt;
 	int ret = -ENOMEM;
 
-	pkt = net_pkt_get_tx(ctx->tcp.ctx, timeout);
+	pkt = net_pkt_get_tx(ctx->tcp.ctx, BUF_ALLOC_TIMEOUT);
 	if (!pkt) {
 		return -ENOMEM;
 	}
 
 	if (!net_pkt_append_all(pkt, strlen(method), (u8_t *)method,
-				timeout)) {
+				BUF_ALLOC_TIMEOUT)) {
 		goto out;
 	}
 
 	/* Space after method string. */
-	if (!net_pkt_append_all(pkt, 1, (u8_t *)" ", timeout)) {
+	if (!net_pkt_append_all(pkt, 1, (u8_t *)" ", BUF_ALLOC_TIMEOUT)) {
 		goto out;
 	}
 
 	if (!net_pkt_append_all(pkt, strlen(req->url), (u8_t *)req->url,
-				timeout)) {
+				BUF_ALLOC_TIMEOUT)) {
 		goto out;
 	}
 
 	if (!net_pkt_append_all(pkt, strlen(req->protocol),
-				(u8_t *)req->protocol, timeout)) {
+				(u8_t *)req->protocol, BUF_ALLOC_TIMEOUT)) {
 		goto out;
 	}
 
 	if (req->host) {
+		if (!net_pkt_append_all(pkt, strlen(HTTP_HOST),
+					(u8_t *)HTTP_HOST,
+					BUF_ALLOC_TIMEOUT)) {
+			goto out;
+		}
+
 		if (!net_pkt_append_all(pkt, strlen(req->host),
-					(u8_t *)req->host, timeout)) {
+					(u8_t *)req->host,
+					BUF_ALLOC_TIMEOUT)) {
 			goto out;
 		}
 
 		if (!net_pkt_append_all(pkt, strlen(HTTP_CRLF),
-					(u8_t *)HTTP_CRLF, timeout)) {
+					(u8_t *)HTTP_CRLF,
+					BUF_ALLOC_TIMEOUT)) {
 			goto out;
 		}
 	}
@@ -101,7 +113,7 @@ int http_request(struct http_client_ctx *ctx,
 	if (req->header_fields) {
 		if (!net_pkt_append_all(pkt, strlen(req->header_fields),
 					(u8_t *)req->header_fields,
-					timeout)) {
+					BUF_ALLOC_TIMEOUT)) {
 			goto out;
 		}
 	}
@@ -109,13 +121,13 @@ int http_request(struct http_client_ctx *ctx,
 	if (req->content_type_value) {
 		if (!net_pkt_append_all(pkt, strlen(HTTP_CONTENT_TYPE),
 					(u8_t *)HTTP_CONTENT_TYPE,
-					timeout)) {
+					BUF_ALLOC_TIMEOUT)) {
 			goto out;
 		}
 
 		if (!net_pkt_append_all(pkt, strlen(req->content_type_value),
 					(u8_t *)req->content_type_value,
-					timeout)) {
+					BUF_ALLOC_TIMEOUT)) {
 			goto out;
 		}
 	}
@@ -133,21 +145,21 @@ int http_request(struct http_client_ctx *ctx,
 		}
 
 		if (!net_pkt_append_all(pkt, ret, (u8_t *)content_len_str,
-					timeout)) {
+					BUF_ALLOC_TIMEOUT)) {
 			ret = -ENOMEM;
 			goto out;
 		}
 
 		if (!net_pkt_append_all(pkt, req->payload_size,
 					(u8_t *)req->payload,
-					timeout)) {
+					BUF_ALLOC_TIMEOUT)) {
 			ret = -ENOMEM;
 			goto out;
 		}
 	} else {
 		if (!net_pkt_append_all(pkt, strlen(HTTP_EOF),
 					(u8_t *)HTTP_EOF,
-					timeout)) {
+					BUF_ALLOC_TIMEOUT)) {
 			goto out;
 		}
 	}
@@ -358,6 +370,7 @@ static int on_message_complete(struct http_parser *parser)
 			    ctx->req.user_data);
 	}
 
+	ctx->rsp.message_complete = 1;
 	k_sem_give(&ctx->req.wait);
 
 	return 0;
@@ -455,6 +468,7 @@ int client_reset(struct http_client_ctx *ctx)
 	ctx->rsp.content_length = 0;
 	ctx->rsp.processed = 0;
 	ctx->rsp.body_found = 0;
+	ctx->rsp.message_complete = 0;
 	ctx->rsp.body_start = NULL;
 
 	memset(ctx->rsp.response_buf, 0, ctx->rsp.response_buf_len);
@@ -483,6 +497,21 @@ static void recv_cb(struct net_context *net_ctx, struct net_pkt *pkt,
 	}
 
 	if (!pkt || net_pkt_appdatalen(pkt) == 0) {
+		/*
+		 * This block most likely handles a TCP_FIN message.
+		 * (this means the connection is now closed)
+		 * If we get here, and rsp.message_complete is still 0
+		 * this means the HTTP client is still waiting to parse a
+		 * response body.
+		 * This will will never happen now.  Instead of generating
+		 * an ETIMEDOUT error in the future, let's unlock the
+		 * req.wait semaphore and let the app deal with whatever
+		 * data was parsed in the header (IE: http status, etc).
+		 */
+		if (ctx->rsp.message_complete == 0) {
+			k_sem_give(&ctx->req.wait);
+		}
+
 		goto out;
 	}
 
@@ -500,7 +529,7 @@ out:
 
 static int get_local_addr(struct http_client_ctx *ctx)
 {
-	if (ctx->tcp.local.family == AF_INET6) {
+	if (ctx->tcp.local.sa_family == AF_INET6) {
 #if defined(CONFIG_NET_IPV6)
 		struct in6_addr *dst = &net_sin6(&ctx->tcp.remote)->sin6_addr;
 
@@ -509,7 +538,7 @@ static int get_local_addr(struct http_client_ctx *ctx)
 #else
 		return -EPFNOSUPPORT;
 #endif
-	} else if (ctx->tcp.local.family == AF_INET) {
+	} else if (ctx->tcp.local.sa_family == AF_INET) {
 #if defined(CONFIG_NET_IPV4)
 		struct net_if *iface = net_if_get_default();
 
@@ -535,7 +564,7 @@ static int tcp_connect(struct http_client_ctx *ctx)
 		return -EALREADY;
 	}
 
-	if (ctx->tcp.remote.family == AF_INET6) {
+	if (ctx->tcp.remote.sa_family == AF_INET6) {
 		addrlen = sizeof(struct sockaddr_in6);
 
 		/* If we are reconnecting, then make sure the source port
@@ -556,12 +585,14 @@ static int tcp_connect(struct http_client_ctx *ctx)
 		return ret;
 	}
 
-	ret = net_context_get(ctx->tcp.remote.family, SOCK_STREAM,
+	ret = net_context_get(ctx->tcp.remote.sa_family, SOCK_STREAM,
 			      IPPROTO_TCP, &ctx->tcp.ctx);
 	if (ret) {
 		NET_DBG("Get context error (%d)", ret);
 		return ret;
 	}
+
+	net_context_setup_pools(ctx->tcp.ctx, ctx->tx_slab, ctx->data_pool);
 
 	ret = net_context_bind(ctx->tcp.ctx, &ctx->tcp.local,
 			       addrlen);
@@ -609,10 +640,10 @@ static inline void print_info(struct http_client_ctx *ctx,
 	char local[NET_IPV6_ADDR_LEN];
 	char remote[NET_IPV6_ADDR_LEN];
 
-	sprint_addr(local, NET_IPV6_ADDR_LEN, ctx->tcp.local.family,
+	sprint_addr(local, NET_IPV6_ADDR_LEN, ctx->tcp.local.sa_family,
 		    &ctx->tcp.local);
 
-	sprint_addr(remote, NET_IPV6_ADDR_LEN, ctx->tcp.remote.family,
+	sprint_addr(remote, NET_IPV6_ADDR_LEN, ctx->tcp.remote.sa_family,
 		    &ctx->tcp.remote);
 
 	NET_DBG("HTTP %s (%s) %s -> %s port %d",
@@ -903,10 +934,18 @@ static int https_init(struct http_client_ctx *ctx)
 
 	mbedtls_platform_set_printf(printk);
 
-	http_heap_init();
-
+	/* Coverity tells in CID 170746 that the mbedtls_ssl_init()
+	 * is overwriting the ssl struct. This looks like false positive as
+	 * the struct is initialized with proper size.
+	 */
 	mbedtls_ssl_init(&ctx->https.mbedtls.ssl);
+
+	/* Coverity tells in CID 170745 that the mbedtls_ssl_config_init()
+	 * is overwriting the conf struct. This looks like false positive as
+	 * the struct is initialized with proper size.
+	 */
 	mbedtls_ssl_config_init(&ctx->https.mbedtls.conf);
+
 	mbedtls_entropy_init(&ctx->https.mbedtls.entropy);
 	mbedtls_ctr_drbg_init(&ctx->https.mbedtls.ctr_drbg);
 
@@ -1308,7 +1347,7 @@ int http_client_send_req(struct http_client_ctx *ctx,
 	{
 		print_info(ctx, ctx->req.method);
 
-		ret = http_request(ctx, req, BUF_ALLOC_TIMEOUT);
+		ret = http_request(ctx, req, timeout);
 		if (ret < 0) {
 			NET_DBG("Send error (%d)", ret);
 			goto out;
@@ -1362,7 +1401,7 @@ static void dns_cb(enum dns_resolve_status status,
 		goto out;
 	}
 
-	ctx->tcp.remote.family = info->ai_family;
+	ctx->tcp.remote.sa_family = info->ai_family;
 
 out:
 	k_sem_give(&waiter->wait);
@@ -1400,7 +1439,7 @@ static int resolve_name(struct http_client_ctx *ctx,
 
 	ctx->dns_id = 0;
 
-	if (ctx->tcp.remote.family == AF_UNSPEC) {
+	if (ctx->tcp.remote.sa_family == AF_UNSPEC) {
 		return -EINVAL;
 	}
 
@@ -1502,7 +1541,7 @@ static inline int set_remote_addr(struct http_client_ctx *ctx,
 	/* If we have not yet figured out what is the protocol family,
 	 * then we cannot continue.
 	 */
-	if (ctx->tcp.remote.family == AF_UNSPEC) {
+	if (ctx->tcp.remote.sa_family == AF_UNSPEC) {
 		NET_ERR("Unknown protocol family.");
 		return -EPFNOSUPPORT;
 	}
@@ -1515,6 +1554,10 @@ int http_client_init(struct http_client_ctx *ctx,
 {
 	int ret;
 
+	/* Coverity tells in CID 170743 that the next memset() is
+	 * is overwriting the ctx struct. This is false positive as
+	 * the struct is initialized with proper size.
+	 */
 	memset(ctx, 0, sizeof(*ctx));
 
 	if (server) {
@@ -1523,7 +1566,7 @@ int http_client_init(struct http_client_ctx *ctx,
 			return ret;
 		}
 
-		ctx->tcp.local.family = ctx->tcp.remote.family;
+		ctx->tcp.local.sa_family = ctx->tcp.remote.sa_family;
 		ctx->server = server;
 	}
 
@@ -1621,7 +1664,7 @@ int https_client_init(struct http_client_ctx *ctx,
 		      const char *cert_host,
 		      https_entropy_src_cb_t entropy_src_cb,
 		      struct k_mem_pool *pool,
-		      u8_t *https_stack,
+		      k_thread_stack_t *https_stack,
 		      size_t https_stack_size)
 {
 	int ret;
@@ -1639,7 +1682,7 @@ int https_client_init(struct http_client_ctx *ctx,
 			return ret;
 		}
 
-		ctx->tcp.local.family = ctx->tcp.remote.family;
+		ctx->tcp.local.sa_family = ctx->tcp.remote.sa_family;
 		ctx->server = server;
 	}
 
@@ -1714,5 +1757,21 @@ void http_client_release(struct http_client_ctx *ctx)
 	/* Let all the pending waiters run */
 	k_yield();
 
+	/* Coverity tells in CID 170742 that the next memset() is
+	 * is overwriting the ctx struct. This is false positive as
+	 * the struct is initialized with proper size.
+	 */
 	memset(ctx, 0, sizeof(*ctx));
 }
+
+#if defined(CONFIG_NET_CONTEXT_NET_PKT_POOL)
+int http_client_set_net_pkt_pool(struct http_client_ctx *ctx,
+				 net_pkt_get_slab_func_t tx_slab,
+				 net_pkt_get_pool_func_t data_pool)
+{
+	ctx->tx_slab = tx_slab;
+	ctx->data_pool = data_pool;
+
+	return 0;
+}
+#endif /* CONFIG_NET_CONTEXT_NET_PKT_POOL */

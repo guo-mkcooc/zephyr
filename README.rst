@@ -1,6 +1,14 @@
 Zephyr Project
 ##############
 
+.. raw:: html
+
+   <a href="https://bestpractices.coreinfrastructure.org/projects/74"><img
+   src="https://bestpractices.coreinfrastructure.org/projects/74/badge"></a>
+   <img
+   src="https://api.shippable.com/projects/58ffb2b8baa5e307002e1d79/badge?branch=master">
+
+
 The Zephyr Project is a scalable real-time operating system (RTOS) supporting
 multiple hardware architectures, optimized for resource constrained devices,
 and built with security in mind.
@@ -10,8 +18,12 @@ resource-constrained systems: from simple embedded environmental sensors and
 LED wearables to sophisticated smart watches and IoT wireless gateways.
 
 The Zephyr kernel supports multiple architectures, including ARM Cortex-M,
-Intel x86, ARC, NIOS II and RISC V, and a large number of
+Intel x86, ARC, NIOS II, Tensilica Xtensa, and RISC V, and a large number of
 `supported boards`_.
+
+.. below included in doc/introduction/introduction.rst
+
+.. start_include_here
 
 Community Support
 *****************
@@ -48,7 +60,7 @@ support systems:
 * **Source Code in GitHub**: Zephyr Project source code is maintained on a
   public GitHub repository at https://github.com/zephyrproject-rtos/zephyr.
   You'll find information about getting access to the repository and how to
-  contribute to the project in this `Contribution Guide`_ wiki article.
+  contribute to the project in this `Contribution Guide`_ document.
 
 * **Samples Code**: In addition to the kernel source code, there are also
   many documented `Sample and Demo Code Examples`_ that can help show you
@@ -60,8 +72,17 @@ support systems:
   the `Zephyr GitHub wiki`_.
 
 * **Issue Reporting and Tracking**: Requirements and Issue tracking is done in
-  our JIRA system: https://jira.zephyrproject.org. You can browse through the
-  reported issues and submit issues of your own.
+  the Github issues system: https://github.com/zephyrproject-rtos/zephyr/issues.
+  You can browse through the reported issues and submit issues of your own.
+
+* **Security-related Issue Reporting and Tracking**: For security-related
+  inquiries or reporting suspected security-related bugs in the Zephyr OS,
+  please send email to vulnerabilities@zephyrproject.org.  We will assess and
+  fix flaws according to our security policy outlined in the Zephyr Project
+  `Security Overview`_.
+
+  Security related issue tracking is done in JIRA.  The location of this JIRA
+  is https://zephyrprojectsec.atlassian.net.
 
 * **Mailing List**: The `Zephyr Mailing Lists`_ are perhaps the most convenient
   way to track developer discussions and to ask your own support questions to
@@ -79,7 +100,8 @@ support systems:
 .. _supported boards: https://www.zephyrproject.org/doc/boards/boards.html
 .. _Zephyr Introduction: https://www.zephyrproject.org/doc/introduction/introducing_zephyr.html
 .. _Getting Started Guide: https://www.zephyrproject.org/doc/getting_started/getting_started.html
-.. _Contribution Guide: https://github.com/zephyrproject-rtos/zephyr/wiki/Contribution-Guide
+.. _Contribution Guide: https://www.zephyrproject.org/doc/contribute/contribute_guidelines.html
 .. _Zephyr GitHub wiki: https://github.com/zephyrproject-rtos/zephyr/wiki
 .. _Zephyr Mailing Lists: https://lists.zephyrproject.org/
 .. _Sample and Demo Code Examples: https://www.zephyrproject.org/doc/samples/samples.html
+.. _Security Overview: https://www.zephyrproject.org/doc/security/security-overview.html

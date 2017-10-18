@@ -42,13 +42,13 @@ enum slip_state {
 
 /* RX queue */
 static struct k_fifo rx_queue;
-static char __noinit __stack rx_stack[1024];
+static K_THREAD_STACK_DEFINE(rx_stack, 1024);
 static struct k_thread rx_thread_data;
 
 /* TX queue */
 static struct k_sem tx_sem;
 static struct k_fifo tx_queue;
-static char __noinit __stack tx_stack[1024];
+static K_THREAD_STACK_DEFINE(tx_stack, 1024);
 static struct k_thread tx_thread_data;
 
 /* Buffer for SLIP encoded data for the worst case */
@@ -472,7 +472,8 @@ static void init_rx_queue(void)
 {
 	k_fifo_init(&rx_queue);
 
-	k_thread_create(&rx_thread_data, rx_stack, sizeof(rx_stack),
+	k_thread_create(&rx_thread_data, rx_stack,
+			K_THREAD_STACK_SIZEOF(rx_stack),
 			(k_thread_entry_t)rx_thread,
 			NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
 }
@@ -482,7 +483,8 @@ static void init_tx_queue(void)
 	k_sem_init(&tx_sem, 0, UINT_MAX);
 	k_fifo_init(&tx_queue);
 
-	k_thread_create(&tx_thread_data, tx_stack, sizeof(tx_stack),
+	k_thread_create(&tx_thread_data, tx_stack,
+			K_THREAD_STACK_SIZEOF(tx_stack),
 			(k_thread_entry_t)tx_thread,
 			NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
 }
@@ -508,8 +510,6 @@ static u8_t *get_mac(struct device *dev)
 
 static bool init_ieee802154(void)
 {
-	u16_t short_addr;
-
 	SYS_LOG_INF("Initialize ieee802.15.4");
 
 	ieee802154_dev = device_get_binding(CONFIG_IEEE802154_CC2520_DRV_NAME);
@@ -525,23 +525,41 @@ static bool init_ieee802154(void)
 	 */
 	get_mac(ieee802154_dev);
 
-#ifdef CONFIG_NET_SAMPLES_SETTINGS
-	SYS_LOG_INF("Set panid %x channel %d",
-		    CONFIG_NET_SAMPLES_IEEE802154_PAN_ID,
-		    CONFIG_NET_SAMPLES_IEEE802154_CHANNEL);
+	if (IEEE802154_HW_FILTER &
+	    radio_api->get_capabilities(ieee802154_dev)) {
+		struct ieee802154_filter filter;
+		u16_t short_addr;
 
-	radio_api->set_pan_id(ieee802154_dev,
-			      CONFIG_NET_SAMPLES_IEEE802154_PAN_ID);
+		/* Set short address */
+		short_addr = (mac_addr[0] << 8) + mac_addr[1];
+		filter.short_addr = short_addr;
+
+		radio_api->set_filter(ieee802154_dev,
+				      IEEE802154_FILTER_TYPE_SHORT_ADDR,
+				      &filter);
+
+		/* Set ieee address */
+		filter.ieee_addr = mac_addr;
+		radio_api->set_filter(ieee802154_dev,
+				      IEEE802154_FILTER_TYPE_IEEE_ADDR,
+				      &filter);
+
+#ifdef CONFIG_NET_APP_SETTINGS
+		SYS_LOG_INF("Set panid %x", CONFIG_NET_APP_IEEE802154_PAN_ID);
+
+		filter.pan_id = CONFIG_NET_APP_IEEE802154_PAN_ID;
+
+		radio_api->set_filter(ieee802154_dev,
+				      IEEE802154_FILTER_TYPE_PAN_ID,
+				      &filter);
+#endif /* CONFIG_NET_APP_SETTINGS */
+	}
+
+#ifdef CONFIG_NET_APP_SETTINGS
+	SYS_LOG_INF("Set channel %x", CONFIG_NET_APP_IEEE802154_CHANNEL);
 	radio_api->set_channel(ieee802154_dev,
-			       CONFIG_NET_SAMPLES_IEEE802154_CHANNEL);
-#endif /* CONFIG_NET_SAMPLES_SETTINGS */
-
-	/* Set short address */
-	short_addr = (mac_addr[0] << 8) + mac_addr[1];
-	radio_api->set_short_addr(ieee802154_dev, short_addr);
-
-	/* Set ieee address */
-	radio_api->set_ieee_addr(ieee802154_dev, mac_addr);
+			       CONFIG_NET_APP_IEEE802154_CHANNEL);
+#endif /* CONFIG_NET_APP_SETTINGS */
 
 	/* Start ieee802154 */
 	radio_api->start(ieee802154_dev);

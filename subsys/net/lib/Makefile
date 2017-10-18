@@ -1,5 +1,13 @@
+ifdef CONFIG_NET_SOCKETS
+include $(srctree)/subsys/net/lib/sockets/Makefile
+endif
+
 ifdef CONFIG_ZOAP
 include $(srctree)/subsys/net/lib/zoap/Makefile
+endif
+
+ifdef CONFIG_COAP
+include $(srctree)/subsys/net/lib/coap/Makefile
 endif
 
 ifdef CONFIG_DNS_RESOLVER
@@ -12,4 +20,16 @@ endif
 
 ifdef CONFIG_HTTP
 include $(srctree)/subsys/net/lib/http/Makefile
+endif
+
+ifdef CONFIG_NET_APP_SETTINGS
+include $(srctree)/subsys/net/lib/app/Makefile
+endif
+
+ifdef CONFIG_LWM2M
+include $(srctree)/subsys/net/lib/lwm2m/Makefile
+endif
+
+ifdef CONFIG_SNTP
+include $(srctree)/subsys/net/lib/sntp/Makefile
 endif

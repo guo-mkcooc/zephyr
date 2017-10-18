@@ -30,6 +30,9 @@
 #define KW41Z_PER_BYTE_TIME		2
 #define KW41Z_ACK_WAIT_TIME		54
 #define KW41Z_IDLE_WAIT_RETRIES		5
+#define KW41Z_PRE_RX_WAIT_TIME		1
+#define KW40Z_POST_SEQ_WAIT_TIME	1
+
 #define RADIO_0_IRQ_PRIO		0x80
 #define KW41Z_FCS_LENGTH		2
 #define KW41Z_PSDU_LENGTH		125
@@ -75,8 +78,6 @@ struct kw41z_context {
 
 	u32_t rx_warmup_time;
 	u32_t tx_warmup_time;
-
-	u8_t lqi;
 };
 
 static struct kw41z_context kw41z_context_data;
@@ -95,6 +96,16 @@ static inline u8_t kw41z_get_seq_state(void)
 
 static inline void kw41z_set_seq_state(u8_t state)
 {
+#if CONFIG_SOC_MKW40Z4
+	/*
+	 * KW40Z seems to require a small delay when switching to IDLE state
+	 * after a programmed sequence is complete.
+	 */
+	if (state == KW41Z_STATE_IDLE) {
+		k_busy_wait(KW40Z_POST_SEQ_WAIT_TIME);
+	}
+#endif
+
 	ZLL->PHY_CTRL = (ZLL->PHY_CTRL & ~ZLL_PHY_CTRL_XCVSEQ_MASK) |
 			ZLL_PHY_CTRL_XCVSEQ(state);
 }
@@ -178,6 +189,13 @@ static inline void kw41z_tmr2_disable(void)
 	ZLL->PHY_CTRL &= ~ZLL_PHY_CTRL_TMR2CMP_EN_MASK;
 }
 
+static enum ieee802154_hw_caps kw41z_get_capabilities(struct device *dev)
+{
+	return IEEE802154_HW_FCS |
+		IEEE802154_HW_2_4_GHZ |
+		IEEE802154_HW_FILTER;
+}
+
 static int kw41z_cca(struct device *dev)
 {
 	struct kw41z_context *kw41z = dev->driver_data;
@@ -239,6 +257,23 @@ static int kw41z_set_ieee_addr(struct device *dev, const u8_t *ieee_addr)
 	return 0;
 }
 
+static int kw41z_set_filter(struct device *dev,
+			    enum ieee802154_filter_type type,
+			    const struct ieee802154_filter *filter)
+{
+	SYS_LOG_DBG("Applying filter %u", type);
+
+	if (type == IEEE802154_FILTER_TYPE_IEEE_ADDR) {
+		return kw41z_set_ieee_addr(dev, filter->ieee_addr);
+	} else if (type == IEEE802154_FILTER_TYPE_SHORT_ADDR) {
+		return kw41z_set_short_addr(dev, filter->short_addr);
+	} else if (type == IEEE802154_FILTER_TYPE_PAN_ID) {
+		return kw41z_set_pan_id(dev, filter->pan_id);
+	}
+
+	return -EINVAL;
+}
+
 static int kw41z_set_txpower(struct device *dev, s16_t dbm)
 {
 	if (dbm < KW41Z_OUTPUT_POWER_MIN) {
@@ -281,19 +316,11 @@ static u8_t kw41z_convert_lqi(u8_t hw_lqi)
 	}
 }
 
-static u8_t kw41z_get_lqi(struct device *dev)
-{
-	struct kw41z_context *kw41z = dev->driver_data;
-
-	return kw41z->lqi;
-}
-
 static inline void kw41z_rx(struct kw41z_context *kw41z, u8_t len)
 {
 	struct net_pkt *pkt = NULL;
 	struct net_buf *frag = NULL;
-	u16_t reg_val = 0;
-	u8_t pkt_len, hw_lqi, i;
+	u8_t pkt_len, hw_lqi;
 
 	pkt_len = len - KW41Z_FCS_LENGTH;
 
@@ -311,15 +338,35 @@ static inline void kw41z_rx(struct kw41z_context *kw41z, u8_t len)
 
 	net_pkt_frag_insert(pkt, frag);
 
+#if CONFIG_SOC_MKW41Z4
 	/* PKT_BUFFER_RX needs to be accessed alligned to 16 bits */
-	for (i = 0; i < pkt_len; i++) {
+	for (u16_t reg_val = 0, i = 0; i < pkt_len; i++) {
 		if (i % 2 == 0) {
-			reg_val = *(((u16_t *)ZLL->PKT_BUFFER_RX) + i/2);
+			reg_val = ZLL->PKT_BUFFER_RX[i/2];
 			frag->data[i] = reg_val & 0xFF;
 		} else {
 			frag->data[i] = reg_val >> 8;
 		}
 	}
+#else /* CONFIG_SOC_MKW40Z4 */
+	/* PKT_BUFFER needs to be accessed alligned to 32 bits */
+	for (u32_t reg_val = 0, i = 0; i < pkt_len; i++) {
+		switch (i % 4) {
+		case 0:
+			reg_val = ZLL->PKT_BUFFER[i/4];
+			frag->data[i] = reg_val & 0xFF;
+			break;
+		case 1:
+			frag->data[i] = (reg_val >> 8) & 0xFF;
+			break;
+		case 2:
+			frag->data[i] = (reg_val >> 16) & 0xFF;
+			break;
+		default:
+			frag->data[i] = reg_val >> 24;
+		}
+	}
+#endif
 
 	net_buf_add(frag, pkt_len);
 
@@ -330,7 +377,8 @@ static inline void kw41z_rx(struct kw41z_context *kw41z, u8_t len)
 
 	hw_lqi = (ZLL->LQI_AND_RSSI & ZLL_LQI_AND_RSSI_LQI_VALUE_MASK) >>
 		 ZLL_LQI_AND_RSSI_LQI_VALUE_SHIFT;
-	kw41z->lqi = kw41z_convert_lqi(hw_lqi);
+	net_pkt_set_ieee802154_lqi(pkt, kw41z_convert_lqi(hw_lqi));
+	/* ToDo: get the rssi as well and use net_pkt_set_ieee802154_rssi() */
 
 	if (net_recv_data(kw41z->iface, pkt) < 0) {
 		SYS_LOG_DBG("Packet dropped by NET stack");
@@ -362,8 +410,13 @@ static int kw41z_tx(struct device *dev, struct net_pkt *pkt,
 		return 0;
 	}
 
+#if CONFIG_SOC_MKW41Z4
 	((u8_t *)ZLL->PKT_BUFFER_TX)[0] = payload_len + KW41Z_FCS_LENGTH;
 	memcpy(((u8_t *)ZLL->PKT_BUFFER_TX) + 1, payload, payload_len);
+#else /* CONFIG_SOC_MKW40Z4 */
+	((u8_t *)ZLL->PKT_BUFFER)[0] = payload_len + KW41Z_FCS_LENGTH;
+	memcpy(((u8_t *)ZLL->PKT_BUFFER) + 1, payload, payload_len);
+#endif
 
 	/* Set CCA mode */
 	ZLL->PHY_CTRL = (ZLL->PHY_CTRL & ~ZLL_PHY_CTRL_CCATYPE_MASK) |
@@ -438,7 +491,14 @@ static void kw41z_isr(int unused)
 		switch (state) {
 		case KW41Z_STATE_RX:
 			SYS_LOG_DBG("RX seq done");
-			ZLL->IRQSTS = irqsts;
+
+			/*
+			 * KW41Z seems to require some time before the RX SEQ
+			 * done IRQ is triggered and the data is actually
+			 * available in the packet buffer.
+			 */
+			k_busy_wait(KW41Z_PRE_RX_WAIT_TIME);
+
 			rx_len = (ZLL->IRQSTS &
 				  ZLL_IRQSTS_RX_FRAME_LENGTH_MASK) >>
 				 ZLL_IRQSTS_RX_FRAME_LENGTH_SHIFT;
@@ -517,7 +577,6 @@ static int kw41z_init(struct device *dev)
 
 	/* Disable all timers, enable AUTOACK, mask all interrupts */
 	ZLL->PHY_CTRL = ZLL_PHY_CTRL_CCATYPE(KW41Z_CCA_MODE1)	|
-			ZLL_IRQSTS_WAKE_IRQ_MASK		|
 			ZLL_PHY_CTRL_CRC_MSK_MASK		|
 			ZLL_PHY_CTRL_PLL_UNLOCK_MSK_MASK	|
 			ZLL_PHY_CTRL_FILTERFAIL_MSK_MASK	|
@@ -525,6 +584,11 @@ static int kw41z_init(struct device *dev)
 			ZLL_PHY_CTRL_RXMSK_MASK			|
 			ZLL_PHY_CTRL_TXMSK_MASK			|
 			ZLL_PHY_CTRL_SEQMSK_MASK;
+
+#if CONFIG_SOC_MKW41Z4
+	ZLL->PHY_CTRL |= ZLL_IRQSTS_WAKE_IRQ_MASK;
+#endif
+
 #if KW41Z_AUTOACK_ENABLED
 	ZLL->PHY_CTRL |= ZLL_PHY_CTRL_AUTOACK_MASK;
 #endif
@@ -615,16 +679,14 @@ static struct ieee802154_radio_api kw41z_radio_api = {
 	.iface_api.init	= kw41z_iface_init,
 	.iface_api.send	= ieee802154_radio_send,
 
-	.cca		= kw41z_cca,
-	.set_channel	= kw41z_set_channel,
-	.set_pan_id	= kw41z_set_pan_id,
-	.set_short_addr	= kw41z_set_short_addr,
-	.set_ieee_addr	= kw41z_set_ieee_addr,
-	.set_txpower	= kw41z_set_txpower,
-	.start		= kw41z_start,
-	.stop		= kw41z_stop,
-	.tx		= kw41z_tx,
-	.get_lqi	= kw41z_get_lqi,
+	.get_capabilities	= kw41z_get_capabilities,
+	.cca			= kw41z_cca,
+	.set_channel		= kw41z_set_channel,
+	.set_filter		= kw41z_set_filter,
+	.set_txpower		= kw41z_set_txpower,
+	.start			= kw41z_start,
+	.stop			= kw41z_stop,
+	.tx			= kw41z_tx,
 };
 
 NET_DEVICE_INIT(kw41z, CONFIG_IEEE802154_KW41Z_DRV_NAME,

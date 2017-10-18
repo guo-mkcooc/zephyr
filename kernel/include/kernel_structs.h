@@ -118,6 +118,11 @@ struct _kernel {
 	struct k_thread *threads; /* singly linked list of ALL fiber+tasks */
 #endif
 
+#if defined(CONFIG_USERSPACE)
+	/* 0 bits for ids currently in use, 1 for free ids */
+	u8_t free_thread_ids[CONFIG_MAX_THREAD_BYTES];
+#endif
+
 	/* arch-specific part of _kernel */
 	struct _kernel_arch arch;
 };
@@ -176,6 +181,10 @@ static ALWAYS_INLINE void _new_thread_init(struct k_thread *thread,
 	/* Initialize custom data field (value is opaque to kernel) */
 	thread->custom_data = NULL;
 #endif
+
+#if defined(CONFIG_USERSPACE)
+	thread->mem_domain_info.mem_domain = NULL;
+#endif /* CONFIG_USERSPACE */
 
 #if defined(CONFIG_THREAD_STACK_INFO)
 	thread->stack_info.start = (u32_t)pStack;
