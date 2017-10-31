@@ -1,0 +1,13 @@
+# Kconfig - STM32F107_CENO board configuration
+#
+# Copyright (c) 2016 RnDity Sp. z o.o.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+if BOARD_STM32F107_CENO
+
+config BOARD
+	default stm32f107_ceno
+
+endif # BOARD_STM32F107_CENO

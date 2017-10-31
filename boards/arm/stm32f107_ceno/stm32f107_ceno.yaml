@@ -1,0 +1,7 @@
+identifier: stm32f107_ceno
+name: STM32F107-CENO
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gccarmemb

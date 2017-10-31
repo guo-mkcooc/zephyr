@@ -33,4 +33,8 @@
 
 #define STM32F1_PINMUX_FUNC_PA8_PWM1_CH1         STM32_PIN_PWM
 
+/**
+ * 
+ */
+
 #endif /* _STM32F1_PINMUX_H_ */
