@@ -489,7 +489,7 @@ class SizeCalculator:
                    "_k_queue_area", "_net_buf_pool_area", "app_datas",
                    "kobject_data", "mmu_tables"]
     # These get copied into RAM only on non-XIP
-    ro_sections = ["text", "ctors", "init_array", "reset",
+    ro_sections = ["text", "ctors", "init_array", "reset", "object_access",
                    "rodata", "devconfig", "net_l2", "vector"]
 
     def __init__(self, filename, extra_sections):
@@ -1216,8 +1216,7 @@ class TestInstance:
             os.makedirs(self.outdir, exist_ok=True)
             f = open(file, "w")
             content = ""
-            for c in self.test.extra_configs:
-                content += c
+            content = "\n".join(self.test.extra_configs)
             f.write(content)
             f.close()
 
@@ -2113,7 +2112,7 @@ def main():
     if args.discard_report:
         ts.discard_report(args.discard_report)
 
-    if VERBOSE:
+    if VERBOSE > 1:
         for i, reason in discards.items():
             debug("{:<25} {:<50} {}SKIPPED{}: {}".format(i.platform.name,
                   i.test.name, COLOR_YELLOW, COLOR_NORMAL, reason))

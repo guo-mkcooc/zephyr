@@ -272,9 +272,15 @@ static void close_net_ctx(struct net_app_ctx *ctx)
 	}
 #endif
 #if defined(CONFIG_NET_APP_SERVER)
-	if (ctx->server.net_ctx) {
-		net_context_put(ctx->server.net_ctx);
-		ctx->server.net_ctx = NULL;
+	{
+		int i;
+
+		for (i = 0; i < CONFIG_NET_APP_SERVER_NUM_CONN; i++) {
+			if (ctx->server.net_ctxs[i]) {
+				net_context_put(ctx->server.net_ctxs[i]);
+				ctx->server.net_ctxs[i] = NULL;
+			}
+		}
 	}
 #endif
 }
@@ -463,6 +469,7 @@ static void _app_connected(struct net_context *net_ctx,
 			   void *user_data)
 {
 	struct net_app_ctx *ctx = user_data;
+	int ret;
 
 #if defined(CONFIG_NET_APP_TLS) || defined(CONFIG_NET_APP_DTLS)
 	if (ctx->is_tls) {
@@ -470,7 +477,10 @@ static void _app_connected(struct net_context *net_ctx,
 	}
 #endif
 
-	net_context_recv(net_ctx, ctx->recv_cb, K_NO_WAIT, ctx);
+	ret = net_context_recv(net_ctx, ctx->recv_cb, K_NO_WAIT, ctx);
+	if (ret < 0) {
+		NET_DBG("Cannot set recv_cb (%d)", ret);
+	}
 
 #if defined(CONFIG_NET_APP_TLS) || defined(CONFIG_NET_APP_DTLS)
 	if (ctx->is_tls) {
