@@ -136,7 +136,7 @@ config CLOCK_STM32_PLL_MULTIPLIER
 	depends on CLOCK_STM32_SYSCLK_SRC_PLL
 	default 9
 	range 2 16 if SOC_STM32F10X_DENSITY_DEVICE
-	range 4 9 if SOC_STM32F10X_CONNECTIVITY_LINE_DEVICE
+	#range 4 9 if SOC_STM32F10X_CONNECTIVITY_LINE_DEVICE
 	help
 	 PLL multiplier, PLL output must not exceed 72MHz. Allowed values:
 	 Density devices: 2-16
